@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { generateSchedule } from "./api"; // <-- import your api.js function
 
 function App() {
   const [tasks, setTasks] = useState([]);          
@@ -9,8 +8,13 @@ function App() {
   const [schedule, setSchedule] = useState([]);    
 
   const chipColors = [
-    "bg-pink-200","bg-yellow-200","bg-green-200",
-    "bg-blue-200","bg-purple-200","bg-orange-200","bg-teal-200",
+    "bg-pink-200",
+    "bg-yellow-200",
+    "bg-green-200",
+    "bg-blue-200",
+    "bg-purple-200",
+    "bg-orange-200",
+    "bg-teal-200",
   ];
 
   const getRandomColor = () =>
@@ -31,24 +35,41 @@ function App() {
     setSchedule([]);
   };
 
-  // Use api.js function for backend call
   const handleGenerateSchedule = async () => {
     if (tasks.length === 0) {
       alert("Please add at least one task before generating a schedule.");
       return;
     }
 
-    try {
-      // Pass only task texts to API
-      const data = await generateSchedule(
-        tasks.map(t => t.text),
-        energy,
-        mood
-      );
+    const API_URL = "https://ai-conscious-calendar-gyds.onrender.com";
 
+    const payload = {
+      tasks: tasks.map((t) => t.text),
+      energy,
+      mood
+    };
+
+    console.log("Sending to backend:", payload); // 🔥 Log payload for debugging
+
+    try {
+      const response = await fetch(`${API_URL}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Backend error:", response.status, text);
+        alert("Error generating schedule. See console for details.");
+        return;
+      }
+
+      const data = await response.json();
+      console.log("Received from backend:", data); // 🔥 Log backend response
       setSchedule(data.schedule || []);
     } catch (err) {
-      console.error("Failed to generate schedule:", err);
+      console.error("Failed to fetch schedule:", err);
       alert("Error generating schedule. Check backend console.");
     }
   };
@@ -89,10 +110,7 @@ function App() {
       {/* Task chips */}
       <div className="mb-8 flex flex-wrap gap-3 justify-center">
         {tasks.map((t, i) => (
-          <div
-            key={i}
-            className={`flex items-center ${t.color} shadow px-4 py-2 rounded-xl`}
-          >
+          <div key={i} className={`flex items-center ${t.color} shadow px-4 py-2 rounded-xl`}>
             <span className="font-medium">{t.text}</span>
             <button
               onClick={() => handleRemoveTask(i)}
@@ -117,10 +135,7 @@ function App() {
           onChange={(e) => setEnergy(Number(e.target.value))}
           className="w-full accent-blue-600"
         />
-
-        <label className="block mt-6 mb-3 font-semibold text-gray-700">
-          Mood:
-        </label>
+        <label className="block mt-6 mb-3 font-semibold text-gray-700">Mood:</label>
         <select
           value={mood}
           onChange={(e) => setMood(e.target.value)}
@@ -151,10 +166,7 @@ function App() {
           </p>
         )}
         {schedule.map((item, idx) => (
-          <div
-            key={idx}
-            className={`${getCardStyle(item.type)} p-5 rounded-2xl shadow-lg transform transition hover:scale-105`}
-          >
+          <div key={idx} className={`${getCardStyle(item.type)} p-5 rounded-2xl shadow-lg transform transition hover:scale-105`}>
             <p className="text-lg font-bold">{item.time}</p>
             <p className="mt-1">{item.task}</p>
             {item.reason && <p className="mt-2 text-sm opacity-80">{item.reason}</p>}
@@ -166,4 +178,5 @@ function App() {
 }
 
 export default App;
+
 
