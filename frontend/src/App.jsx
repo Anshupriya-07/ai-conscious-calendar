@@ -45,8 +45,12 @@ function App() {
       alert("Please add at least one task before generating a schedule.");
       return;
     }
+
+    // Use Vite env variable; fallback to same origin if not set
+    const API_URL = import.meta.env.VITE_API_URL || "";
+
     try {
-      const response = await fetch("http://127.0.0.1:8000/schedule", {
+      const response = await fetch(`${API_URL}/schedule`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -55,6 +59,14 @@ function App() {
           mood,
         }),
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Backend error:", response.status, text);
+        alert("Error generating schedule. See console for details.");
+        return;
+      }
+
       const data = await response.json();
       setSchedule(data.schedule || []);
     } catch (err) {
@@ -186,7 +198,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
