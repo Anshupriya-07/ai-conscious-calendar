@@ -7,6 +7,7 @@ from groq import Groq
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ---------------------------
@@ -15,27 +16,17 @@ from pydantic import BaseModel
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
 
-if not api_key or api_key.startswith("YOUR_"):
-    raise ValueError("Groq API key not loaded properly. Check your .env file.")
-else:
-    print("Groq key loaded:", api_key[:6] + "*****")
-
-# Initialize Groq client
-client = Groq(api_key=api_key)
+if not api_key:
+    print("⚠️ Warning: GROQ_API_KEY not set. Schedule generation will fail.")
 
 # ---------------------------
-# Initialize FastAPI
+# FastAPI app
 # ---------------------------
-app = FastAPI()
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+app = FastAPI(title="AI Conscious Scheduler")
 
 # ---------------------------
-# CORS (allow all origins in simple deployments)
+# CORS setup
 # ---------------------------
-# For production, set FRONTEND_URL env var and add it to allowed origins instead of "*".
 frontend_url = os.getenv("FRONTEND_URL", "").strip()
 
 origins = [
@@ -43,17 +34,17 @@ origins = [
     "http://localhost:3000",
     "http://localhost:5173",
 ]
+
 if frontend_url:
     origins.append(frontend_url)
 
-# If you need permissive CORS during quick deploy/testing:
 allow_all = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() in ("1", "true", "yes")
 if allow_all:
     origins = ["*"]
     allow_credentials_flag = False
 else:
     allow_credentials_flag = True
-# Note: when origins == ["*"], do not set allow_credentials=True
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -89,7 +80,7 @@ def assign_slots(tasks, energy, mood):
         "low": ["5 PM", "7 PM"]
     }
     type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
-    # tasks is a list of dicts: {task, type, reason}
+
     tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t.get('type', ''), 3))
 
     schedule = []
@@ -141,6 +132,13 @@ def assign_slots_with_breaks(tasks, energy, mood):
     return final_schedule
 
 # ---------------------------
+# Health check endpoint
+# ---------------------------
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+# ---------------------------
 # Schedule generation endpoint
 # ---------------------------
 @app.post("/schedule", response_model=ScheduleResponse)
@@ -157,7 +155,7 @@ Task: {task_text}
         task_type, reason = "Unknown", ""
 
         try:
-            response = client.chat.completions.create(
+            response = Groq(api_key).chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
@@ -166,7 +164,7 @@ Task: {task_text}
                 temperature=0
             )
 
-            # Safely extract model response (defensive in case SDK shape differs)
+            # Safely extract model response
             raw_content = ""
             try:
                 raw_content = (
@@ -174,7 +172,6 @@ Task: {task_text}
                     or response.choices[0].message.get("content", "")
                 )
             except Exception:
-                # fallback if SDK structure is different
                 raw_content = str(response)
 
             raw_content = raw_content.strip()
@@ -215,15 +212,15 @@ Task: {task_text}
 # ---------------------------
 # Serve React build (dist) as static files
 # ---------------------------
-# Mount the 'dist' folder created by `npm run build`.
-# Keep this mount AFTER API routes so endpoints like /schedule still work.
-app.mount("/", StaticFiles(directory="dist", html=True), name="static")
+if os.path.exists("dist"):
+    app.mount("/", StaticFiles(directory="dist", html=True), name="static")
+else:
+    print("⚠️ Warning: 'dist' folder not found. React frontend will not be served.")
 
 # ---------------------------
 # Run with Render-compatible settings
 # ---------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Render provides PORT
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
