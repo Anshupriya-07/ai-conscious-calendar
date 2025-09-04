@@ -50,12 +50,14 @@ if frontend_url:
 allow_all = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() in ("1", "true", "yes")
 if allow_all:
     origins = ["*"]
-
+    allow_credentials_flag = False
+else:
+    allow_credentials_flag = True
 # Note: when origins == ["*"], do not set allow_credentials=True
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=False,
+    allow_credentials=allow_credentials_flag,
     allow_methods=["*"],
     allow_headers=["*"],
 )

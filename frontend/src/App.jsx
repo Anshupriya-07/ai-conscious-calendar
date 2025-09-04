@@ -47,7 +47,7 @@ function App() {
     }
 
     // Relative path for same-origin backend (works on Render monorepo)
-    const API_URL = "";
+    const API_URL = "https://ai-conscious-calendar-gyds.onrender.com";
 
     try {
       const response = await fetch(`${API_URL}/schedule`, {
