@@ -7,7 +7,6 @@ from groq import Groq
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ---------------------------
@@ -33,17 +32,30 @@ app = FastAPI()
 def health():
     return {"status": "ok"}
 
-# Enable CORS
+# ---------------------------
+# CORS (allow all origins in simple deployments)
+# ---------------------------
+# For production, set FRONTEND_URL env var and add it to allowed origins instead of "*".
+frontend_url = os.getenv("FRONTEND_URL", "").strip()
+
 origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
-    "*"
 ]
+if frontend_url:
+    origins.append(frontend_url)
+
+# If you need permissive CORS during quick deploy/testing:
+allow_all = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() in ("1", "true", "yes")
+if allow_all:
+    origins = ["*"]
+
+# Note: when origins == ["*"], do not set allow_credentials=True
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,16 +87,17 @@ def assign_slots(tasks, energy, mood):
         "low": ["5 PM", "7 PM"]
     }
     type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
-    tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t['type'], 3))
+    # tasks is a list of dicts: {task, type, reason}
+    tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t.get('type', ''), 3))
 
     schedule = []
     slot_counters = {"high": 0, "medium": 0, "low": 0}
 
     for task in tasks_sorted:
-        t_type = task['type']
+        t_type = task.get('type', '')
 
         if t_type == "Deep Work":
-            zone = "high" if energy >= 5 and mood not in ["tired", "low"] else "medium"
+            zone = "high" if energy >= 5 and mood.lower() not in ["tired", "low"] else "medium"
         elif t_type == "Creative":
             zone = "low" if energy <= 4 else "medium"
         else:
@@ -97,8 +110,8 @@ def assign_slots(tasks, energy, mood):
 
         schedule.append({
             "time": time_slot,
-            "task": task['task'],
-            "type": task['type'],
+            "task": task.get('task', ''),
+            "type": task.get('type', ''),
             "reason": task.get('reason', "")
         })
 
@@ -114,7 +127,7 @@ def assign_slots_with_breaks(tasks, energy, mood):
 
     for item in schedule:
         final_schedule.append(item)
-        if item['type'] == "Deep Work":
+        if item.get('type') == "Deep Work":
             deep_work_count += 1
             if deep_work_count % 2 == 0:
                 final_schedule.append({
@@ -132,12 +145,12 @@ def assign_slots_with_breaks(tasks, energy, mood):
 def generate_schedule(input: TaskInput):
     schedule = []
 
-    for i, task in enumerate(input.tasks):
+    for i, task_text in enumerate(input.tasks):
         prompt = f"""
 Classify the following task strictly as one of [Deep Work, Creative, Shallow].
 Also provide a one-line reason. Respond ONLY in JSON format like:
 {{"type": "Deep Work", "reason": "Requires focused, uninterrupted work."}}
-Task: {task}
+Task: {task_text}
 """
         task_type, reason = "Unknown", ""
 
@@ -151,11 +164,17 @@ Task: {task}
                 temperature=0
             )
 
-            # Safely extract model response
-            raw_content = (
-                getattr(response.choices[0].message, "content", None)
-                or response.choices[0].message.get("content", "")
-            )
+            # Safely extract model response (defensive in case SDK shape differs)
+            raw_content = ""
+            try:
+                raw_content = (
+                    getattr(response.choices[0].message, "content", None)
+                    or response.choices[0].message.get("content", "")
+                )
+            except Exception:
+                # fallback if SDK structure is different
+                raw_content = str(response)
+
             raw_content = raw_content.strip()
 
             # Clean JSON if wrapped in code fences
@@ -183,7 +202,7 @@ Task: {task}
             print("="*50 + "\n")
 
         schedule.append({
-            "task": task,
+            "task": task_text,
             "type": task_type,
             "reason": reason
         })
@@ -192,14 +211,11 @@ Task: {task}
     return {"schedule": final_schedule}
 
 # ---------------------------
-# Serve React build
+# Serve React build (dist) as static files
 # ---------------------------
-app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-
-@app.get("/")
-def serve_react_app():
-    return FileResponse("dist/index.html")
-
+# Mount the 'dist' folder created by `npm run build`.
+# Keep this mount AFTER API routes so endpoints like /schedule still work.
+app.mount("/", StaticFiles(directory="dist", html=True), name="static")
 
 # ---------------------------
 # Run with Render-compatible settings
@@ -208,3 +224,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))  # Render provides PORT
     uvicorn.run(app, host="0.0.0.0", port=port)
+
