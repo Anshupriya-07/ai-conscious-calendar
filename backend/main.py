@@ -1,13 +1,18 @@
 import os
+import json
+import traceback
 from dotenv import load_dotenv
 from groq import Groq
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import json
 
+# ---------------------------
 # Load environment variables
+# ---------------------------
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
 
@@ -19,23 +24,22 @@ else:
 # Initialize Groq client
 client = Groq(api_key=api_key)
 
+# ---------------------------
 # Initialize FastAPI
+# ---------------------------
 app = FastAPI()
 
-# ADD: health check endpoint
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-# Enable CORS so frontend can call backend
+# Enable CORS
 origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
     "*"
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -62,7 +66,7 @@ class ScheduleResponse(BaseModel):
     schedule: list[ScheduleItem]
 
 # ---------------------------
-# Energy-aware scheduling helper
+# Energy-aware scheduling
 # ---------------------------
 def assign_slots(tasks, energy, mood):
     energy_slots = {
@@ -70,7 +74,6 @@ def assign_slots(tasks, energy, mood):
         "medium": ["1 PM", "3 PM"],
         "low": ["5 PM", "7 PM"]
     }
-
     type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
     tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t['type'], 3))
 
@@ -114,7 +117,6 @@ def assign_slots_with_breaks(tasks, energy, mood):
         if item['type'] == "Deep Work":
             deep_work_count += 1
             if deep_work_count % 2 == 0:
-                # Insert a short break after every 2 Deep Work tasks
                 final_schedule.append({
                     "time": "Break",
                     "task": "Take a short break",
@@ -137,6 +139,8 @@ Also provide a one-line reason. Respond ONLY in JSON format like:
 {{"type": "Deep Work", "reason": "Requires focused, uninterrupted work."}}
 Task: {task}
 """
+        task_type, reason = "Unknown", ""
+
         try:
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
@@ -147,7 +151,19 @@ Task: {task}
                 temperature=0
             )
 
-            raw_content = response.choices[0].message.content.strip()
+            # Safely extract model response
+            raw_content = (
+                getattr(response.choices[0].message, "content", None)
+                or response.choices[0].message.get("content", "")
+            )
+            raw_content = raw_content.strip()
+
+            # Clean JSON if wrapped in code fences
+            if raw_content.startswith("```"):
+                raw_content = raw_content.strip("` \n")
+                if raw_content.startswith("json"):
+                    raw_content = raw_content[len("json"):].strip()
+
             print("\n==== RAW RESPONSE ====")
             print(raw_content)
             print("====================\n")
@@ -157,19 +173,14 @@ Task: {task}
                 task_type = parsed.get("type", "Unknown")
                 reason = parsed.get("reason", "")
             except json.JSONDecodeError:
-                task_type = "Unknown"
-                reason = ""
-                print("Failed to parse JSON from Groq response.")
+                print("❌ Failed to parse JSON from Groq response.")
 
         except Exception as e:
-            import traceback
             print("\n" + "="*50)
             print("Groq error caught!")
             print(e)
             traceback.print_exc()
             print("="*50 + "\n")
-            task_type = "Unknown"
-            reason = ""
 
         schedule.append({
             "task": task,
@@ -177,14 +188,12 @@ Task: {task}
             "reason": reason
         })
 
-    # Apply energy-aware scheduling with breaks
     final_schedule = assign_slots_with_breaks(schedule, input.energy, input.mood)
-
     return {"schedule": final_schedule}
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
+# ---------------------------
 # Serve React build
+# ---------------------------
 app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
 
 @app.get("/")
