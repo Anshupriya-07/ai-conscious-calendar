@@ -7,7 +7,6 @@ from groq import Groq
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ---------------------------
@@ -71,65 +70,79 @@ class ScheduleResponse(BaseModel):
     schedule: list[ScheduleItem]
 
 # ---------------------------
-# Energy-aware scheduling
+# Energy-aware + unique scheduling with breaks
 # ---------------------------
-def assign_slots(tasks, energy, mood):
+def assign_slots_with_breaks(tasks, energy, mood):
+    # Define base slots per zone
     energy_slots = {
-        "high": ["9 AM", "11 AM"],
-        "medium": ["1 PM", "3 PM"],
-        "low": ["5 PM", "7 PM"]
+        "high": ["9 AM", "10 AM", "11 AM", "12 PM"],
+        "medium": ["1 PM", "2 PM", "3 PM", "4 PM"],
+        "low": ["5 PM", "6 PM", "7 PM", "8 PM"]
     }
-    type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
 
+    type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
     tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t.get('type', ''), 3))
 
     schedule = []
-    slot_counters = {"high": 0, "medium": 0, "low": 0}
+    used_slots = set()
+    deep_work_count = 0
+    # Keep track of extra slots if base slots are full
+    slot_extension_counter = 0
 
     for task in tasks_sorted:
-        t_type = task.get('type', '')
+        t_type = task.get("type", "")
 
+        # Determine zone based on energy and mood
         if t_type == "Deep Work":
             zone = "high" if energy >= 5 and mood.lower() not in ["tired", "low"] else "medium"
         elif t_type == "Creative":
             zone = "low" if energy <= 4 else "medium"
-        else:
+        else:  # Shallow
             zone = "medium" if energy >= 5 else "low"
 
-        slots = energy_slots[zone]
-        idx = slot_counters[zone] % len(slots)
-        time_slot = slots[idx]
-        slot_counters[zone] += 1
+        # Find first available slot in zone
+        slot = next((s for s in energy_slots[zone] if s not in used_slots), None)
+
+        # If all slots in the zone are used, extend slots dynamically
+        if not slot:
+            all_slots_flat = sum(energy_slots.values(), [])
+            while True:
+                # Generate new extended slot: e.g., "9 AM (+1)"
+                base_slot = all_slots_flat[slot_extension_counter % len(all_slots_flat)]
+                new_slot = f"{base_slot} (+{slot_extension_counter // len(all_slots_flat) + 1})"
+                slot_extension_counter += 1
+                if new_slot not in used_slots:
+                    slot = new_slot
+                    break
+
+        used_slots.add(slot)
 
         schedule.append({
-            "time": time_slot,
-            "task": task.get('task', ''),
-            "type": task.get('type', ''),
-            "reason": task.get('reason', "")
+            "time": slot,
+            "task": task.get("task", ""),
+            "type": t_type,
+            "reason": task.get("reason", "")
         })
 
-    return schedule
-
-# ---------------------------
-# Break-aware scheduling
-# ---------------------------
-def assign_slots_with_breaks(tasks, energy, mood):
-    schedule = assign_slots(tasks, energy, mood)
-    final_schedule = []
-    deep_work_count = 0
-
-    for item in schedule:
-        final_schedule.append(item)
-        if item.get('type') == "Deep Work":
+        # Insert a break after every 2 deep work sessions
+        if t_type == "Deep Work":
             deep_work_count += 1
             if deep_work_count % 2 == 0:
-                final_schedule.append({
-                    "time": "Break",
+                # Find next available slot for break
+                break_slot = next((s for s in sum(energy_slots.values(), []) if s not in used_slots), None)
+                if not break_slot:
+                    # Extend break slot dynamically
+                    break_slot = f"Break (+{slot_extension_counter})"
+                    slot_extension_counter += 1
+                used_slots.add(break_slot)
+                schedule.append({
+                    "time": break_slot,
                     "task": "Take a short break",
                     "type": "Break",
                     "reason": "Recharge before next deep work session"
                 })
-    return final_schedule
+
+    return schedule
 
 # ---------------------------
 # Health check endpoint
