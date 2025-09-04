@@ -46,8 +46,8 @@ function App() {
       return;
     }
 
-    // Use Vite env variable; fallback to same origin if not set
-    const API_URL = import.meta.env.VITE_API_URL || "";
+    // Relative path for same-origin backend (works on Render monorepo)
+    const API_URL = "";
 
     try {
       const response = await fetch(`${API_URL}/schedule`, {
@@ -181,15 +181,11 @@ function App() {
         {schedule.map((item, idx) => (
           <div
             key={idx}
-            className={`${getCardStyle(
-              item.type
-            )} p-5 rounded-2xl shadow-lg transform transition hover:scale-105`}
+            className={`${getCardStyle(item.type)} p-5 rounded-2xl shadow-lg transform transition hover:scale-105`}
           >
             <p className="text-lg font-bold">{item.time}</p>
             <p className="mt-1">{item.task}</p>
-            {item.reason && (
-              <p className="mt-2 text-sm opacity-80">{item.reason}</p>
-            )}
+            {item.reason && <p className="mt-2 text-sm opacity-80">{item.reason}</p>}
           </div>
         ))}
       </div>
