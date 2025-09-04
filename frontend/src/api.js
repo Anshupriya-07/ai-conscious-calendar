@@ -1,10 +1,10 @@
 export async function getHealth() {
-  const response = await fetch("http://127.0.0.1:8000/health");
+  const response = await fetch("https://ai-conscious-calendar.onrender.com/health");
   return await response.json();
 }
 
 export async function generateSchedule(tasks, energy, mood) {
-  const response = await fetch("http://127.0.0.1:8000/schedule", {
+  const response = await fetch("https://ai-conscious-calendar.onrender.com/generate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
