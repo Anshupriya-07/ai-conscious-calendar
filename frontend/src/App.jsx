@@ -1,93 +1,65 @@
 import { useState } from "react";
+import { generateSchedule } from "./api"; // <-- import your api.js function
 
 function App() {
-  const [tasks, setTasks] = useState([]);          // array of {text, color}
-  const [taskInput, setTaskInput] = useState("");  // input for new task
-  const [energy, setEnergy] = useState(5);         // energy slider 1–10
-  const [mood, setMood] = useState("Neutral");     // mood select
-  const [schedule, setSchedule] = useState([]);    // schedule from backend
+  const [tasks, setTasks] = useState([]);          
+  const [taskInput, setTaskInput] = useState("");  
+  const [energy, setEnergy] = useState(5);         
+  const [mood, setMood] = useState("Neutral");     
+  const [schedule, setSchedule] = useState([]);    
 
-  // Some pastel Pinterest-like colors
   const chipColors = [
-    "bg-pink-200",
-    "bg-yellow-200",
-    "bg-green-200",
-    "bg-blue-200",
-    "bg-purple-200",
-    "bg-orange-200",
-    "bg-teal-200",
+    "bg-pink-200","bg-yellow-200","bg-green-200",
+    "bg-blue-200","bg-purple-200","bg-orange-200","bg-teal-200",
   ];
 
-  // Pick random color for new chip
   const getRandomColor = () =>
     chipColors[Math.floor(Math.random() * chipColors.length)];
 
-  // Add a task
   const handleAddTask = () => {
     if (taskInput.trim() !== "") {
       setTasks([...tasks, { text: taskInput.trim(), color: getRandomColor() }]);
       setTaskInput("");
-      setSchedule([]); // clear old schedule when tasks change
+      setSchedule([]);
     }
   };
 
-  // Remove a task
   const handleRemoveTask = (index) => {
     const newTasks = [...tasks];
     newTasks.splice(index, 1);
     setTasks(newTasks);
-    setSchedule([]); // clear old schedule when tasks change
+    setSchedule([]);
   };
 
-  // Call backend to generate schedule
+  // Use api.js function for backend call
   const handleGenerateSchedule = async () => {
     if (tasks.length === 0) {
       alert("Please add at least one task before generating a schedule.");
       return;
     }
 
-    // Relative path for same-origin backend (works on Render monorepo)
-    const API_URL = "https://ai-conscious-calendar-gyds.onrender.com";
-
     try {
-      const response = await fetch(`${API_URL}/schedule`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tasks: tasks.map((t) => t.text), // only send text
-          energy,
-          mood,
-        }),
-      });
+      // Pass only task texts to API
+      const data = await generateSchedule(
+        tasks.map(t => t.text),
+        energy,
+        mood
+      );
 
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Backend error:", response.status, text);
-        alert("Error generating schedule. See console for details.");
-        return;
-      }
-
-      const data = await response.json();
       setSchedule(data.schedule || []);
     } catch (err) {
-      console.error("Failed to fetch schedule:", err);
+      console.error("Failed to generate schedule:", err);
       alert("Error generating schedule. Check backend console.");
     }
   };
 
-  // Card colors for schedule
   const getCardStyle = (type) => {
     switch (type) {
-      case "Deep Work":
-        return "bg-gradient-to-br from-red-400 to-red-200 text-white";
-      case "Creative":
-        return "bg-gradient-to-br from-purple-400 to-pink-300 text-white";
-      case "Shallow":
-        return "bg-gradient-to-br from-blue-400 to-blue-200 text-white";
-      case "Break":
-        return "bg-gradient-to-br from-yellow-300 to-yellow-100 text-gray-800";
-      default:
-        return "bg-gray-200 text-gray-800";
+      case "Deep Work": return "bg-gradient-to-br from-red-400 to-red-200 text-white";
+      case "Creative": return "bg-gradient-to-br from-purple-400 to-pink-300 text-white";
+      case "Shallow": return "bg-gradient-to-br from-blue-400 to-blue-200 text-white";
+      case "Break": return "bg-gradient-to-br from-yellow-300 to-yellow-100 text-gray-800";
+      default: return "bg-gray-200 text-gray-800";
     }
   };
 
@@ -194,3 +166,4 @@ function App() {
 }
 
 export default App;
+
