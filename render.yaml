@@ -9,3 +9,4 @@
     envVars:
       - key: GROQ_API_KEY
         sync: false
+
