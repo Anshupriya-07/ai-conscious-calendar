@@ -72,21 +72,24 @@ class ScheduleResponse(BaseModel):
 # ---------------------------
 # Energy-aware + unique scheduling with breaks
 # ---------------------------
+# ---------------------------
+# Energy + mood aware scheduling with breaks
+# ---------------------------
 def assign_slots_with_breaks(tasks, energy, mood):
-    # Define base slots per zone
+    # Base slots per energy zone
     energy_slots = {
         "high": ["9 AM", "10 AM", "11 AM", "12 PM"],
         "medium": ["1 PM", "2 PM", "3 PM", "4 PM"],
         "low": ["5 PM", "6 PM", "7 PM", "8 PM"]
     }
 
+    mood_lower = mood.lower()
     type_priority = {"Deep Work": 1, "Creative": 2, "Shallow": 3}
     tasks_sorted = sorted(tasks, key=lambda t: type_priority.get(t.get('type', ''), 3))
 
     schedule = []
     used_slots = set()
     deep_work_count = 0
-    # Keep track of extra slots if base slots are full
     slot_extension_counter = 0
 
     for task in tasks_sorted:
@@ -94,20 +97,27 @@ def assign_slots_with_breaks(tasks, energy, mood):
 
         # Determine zone based on energy and mood
         if t_type == "Deep Work":
-            zone = "high" if energy >= 5 and mood.lower() not in ["tired", "low"] else "medium"
+            if energy >= 7 and mood_lower not in ["tired", "low"]:
+                zone = "high"
+            elif energy >= 4:
+                zone = "medium"
+            else:
+                zone = "low"
         elif t_type == "Creative":
-            zone = "low" if energy <= 4 else "medium"
+            if mood_lower in ["happy", "excited", "inspired"]:
+                zone = "high" if energy >= 5 else "medium"
+            else:
+                zone = "medium" if energy >= 5 else "low"
         else:  # Shallow
             zone = "medium" if energy >= 5 else "low"
 
         # Find first available slot in zone
         slot = next((s for s in energy_slots[zone] if s not in used_slots), None)
 
-        # If all slots in the zone are used, extend slots dynamically
+        # If all slots in the zone are used, extend dynamically
         if not slot:
             all_slots_flat = sum(energy_slots.values(), [])
             while True:
-                # Generate new extended slot: e.g., "9 AM (+1)"
                 base_slot = all_slots_flat[slot_extension_counter % len(all_slots_flat)]
                 new_slot = f"{base_slot} (+{slot_extension_counter // len(all_slots_flat) + 1})"
                 slot_extension_counter += 1
@@ -124,14 +134,12 @@ def assign_slots_with_breaks(tasks, energy, mood):
             "reason": task.get("reason", "")
         })
 
-        # Insert a break after every 2 deep work sessions
+        # Insert a break after every 2 Deep Work sessions
         if t_type == "Deep Work":
             deep_work_count += 1
             if deep_work_count % 2 == 0:
-                # Find next available slot for break
                 break_slot = next((s for s in sum(energy_slots.values(), []) if s not in used_slots), None)
                 if not break_slot:
-                    # Extend break slot dynamically
                     break_slot = f"Break (+{slot_extension_counter})"
                     slot_extension_counter += 1
                 used_slots.add(break_slot)
@@ -143,6 +151,7 @@ def assign_slots_with_breaks(tasks, energy, mood):
                 })
 
     return schedule
+
 
 # ---------------------------
 # Health check endpoint
