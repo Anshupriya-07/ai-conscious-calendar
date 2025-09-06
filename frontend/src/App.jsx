@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function App() {
-  const [tasks, setTasks] = useState([]);          
-  const [taskInput, setTaskInput] = useState("");  
-  const [energy, setEnergy] = useState(5);         
-  const [mood, setMood] = useState("Neutral");     
-  const [schedule, setSchedule] = useState([]);    
+  const [tasks, setTasks] = useState([]);
+  const [taskInput, setTaskInput] = useState("");
+  const [energy, setEnergy] = useState(5);
+  const [mood, setMood] = useState("Neutral");
+  const [schedule, setSchedule] = useState([]);
+  const [ws, setWs] = useState(null); // WebSocket state
 
   const chipColors = [
     "bg-pink-200",
@@ -46,10 +47,10 @@ function App() {
     const payload = {
       tasks: tasks.map((t) => t.text),
       energy,
-      mood
+      mood,
     };
 
-    console.log("Sending to backend:", payload); // 🔥 Log payload for debugging
+    console.log("Sending to backend:", payload);
 
     try {
       const response = await fetch(`${API_URL}/schedule`, {
@@ -66,7 +67,7 @@ function App() {
       }
 
       const data = await response.json();
-      console.log("Received from backend:", data); // 🔥 Log backend response
+      console.log("Received from backend:", data);
       setSchedule(data.schedule || []);
     } catch (err) {
       console.error("Failed to fetch schedule:", err);
@@ -76,13 +77,38 @@ function App() {
 
   const getCardStyle = (type) => {
     switch (type) {
-      case "Deep Work": return "bg-gradient-to-br from-red-400 to-red-200 text-white";
-      case "Creative": return "bg-gradient-to-br from-purple-400 to-pink-300 text-white";
-      case "Shallow": return "bg-gradient-to-br from-blue-400 to-blue-200 text-white";
-      case "Break": return "bg-gradient-to-br from-yellow-300 to-yellow-100 text-gray-800";
-      default: return "bg-gray-200 text-gray-800";
+      case "Deep Work":
+        return "bg-gradient-to-br from-red-400 to-red-200 text-white";
+      case "Creative":
+        return "bg-gradient-to-br from-purple-400 to-pink-300 text-white";
+      case "Shallow":
+        return "bg-gradient-to-br from-blue-400 to-blue-200 text-white";
+      case "Break":
+        return "bg-gradient-to-br from-yellow-300 to-yellow-100 text-gray-800";
+      default:
+        return "bg-gray-200 text-gray-800";
     }
   };
+
+  // ---------------- WebSocket for real-time updates ----------------
+  useEffect(() => {
+    if (!schedule.length) return; // connect only after first schedule generated
+    const sessionId = "default"; // can generate unique per user/session
+    const socket = new WebSocket(`wss://ai-conscious-calendar-gyds.onrender.com/ws/${sessionId}`);
+
+    socket.onopen = () => console.log("WebSocket connected ✅");
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setSchedule(data.schedule);
+    };
+    socket.onclose = () => console.log("WebSocket disconnected ❌");
+
+    setWs(socket);
+
+    return () => socket.close();
+  }, [schedule]);
+
+  // ---------------- End WebSocket ----------------
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-blue-50 p-6">
@@ -136,33 +162,32 @@ function App() {
           className="w-full accent-blue-600"
         />
         <label className="block mt-6 mb-3 font-semibold text-gray-700">Mood:</label>
-<div className="flex gap-4 justify-center">
-  <button
-    onClick={() => setMood("Tired")}
-    className={`text-3xl p-2 rounded-full ${mood === "Tired" ? "ring-4 ring-blue-400" : ""}`}
-  >
-    😴
-  </button>
-  <button
-    onClick={() => setMood("Neutral")}
-    className={`text-3xl p-2 rounded-full ${mood === "Neutral" ? "ring-4 ring-blue-400" : ""}`}
-  >
-    😐
-  </button>
-  <button
-    onClick={() => setMood("Happy")}
-    className={`text-3xl p-2 rounded-full ${mood === "Happy" ? "ring-4 ring-blue-400" : ""}`}
-  >
-    😁
-  </button>
-  <button
-    onClick={() => setMood("Stressed")}
-    className={`text-3xl p-2 rounded-full ${mood === "Stressed" ? "ring-4 ring-blue-400" : ""}`}
-  >
-    😡
-  </button>
-</div>
-
+        <div className="flex gap-4 justify-center">
+          <button
+            onClick={() => setMood("Tired")}
+            className={`text-3xl p-2 rounded-full ${mood === "Tired" ? "ring-4 ring-blue-400" : ""}`}
+          >
+            😴
+          </button>
+          <button
+            onClick={() => setMood("Neutral")}
+            className={`text-3xl p-2 rounded-full ${mood === "Neutral" ? "ring-4 ring-blue-400" : ""}`}
+          >
+            😐
+          </button>
+          <button
+            onClick={() => setMood("Happy")}
+            className={`text-3xl p-2 rounded-full ${mood === "Happy" ? "ring-4 ring-blue-400" : ""}`}
+          >
+            😁
+          </button>
+          <button
+            onClick={() => setMood("Stressed")}
+            className={`text-3xl p-2 rounded-full ${mood === "Stressed" ? "ring-4 ring-blue-400" : ""}`}
+          >
+            😡
+          </button>
+        </div>
       </div>
 
       {/* Generate schedule button */}
@@ -187,6 +212,24 @@ function App() {
             <p className="text-lg font-bold">{item.time}</p>
             <p className="mt-1">{item.task}</p>
             {item.reason && <p className="mt-2 text-sm opacity-80">{item.reason}</p>}
+
+            {/* Complete / Skip buttons */}
+            {item.type !== "Break" && ws && (
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => ws.send(JSON.stringify({ action: "completed", task: item.task }))}
+                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  ✅ Done
+                </button>
+                <button
+                  onClick={() => ws.send(JSON.stringify({ action: "skipped", task: item.task }))}
+                  className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  ❌ Skip
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
