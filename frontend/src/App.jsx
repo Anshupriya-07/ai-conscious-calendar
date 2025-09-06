@@ -136,16 +136,33 @@ function App() {
           className="w-full accent-blue-600"
         />
         <label className="block mt-6 mb-3 font-semibold text-gray-700">Mood:</label>
-        <select
-          value={mood}
-          onChange={(e) => setMood(e.target.value)}
-          className="border p-3 rounded-xl w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          <option value="Neutral">Neutral</option>
-          <option value="Tired">Tired</option>
-          <option value="Happy">Happy</option>
-          <option value="Stressed">Stressed</option>
-        </select>
+<div className="flex gap-4 justify-center">
+  <button
+    onClick={() => setMood("Tired")}
+    className={`text-3xl p-2 rounded-full ${mood === "Tired" ? "ring-4 ring-blue-400" : ""}`}
+  >
+    😴
+  </button>
+  <button
+    onClick={() => setMood("Neutral")}
+    className={`text-3xl p-2 rounded-full ${mood === "Neutral" ? "ring-4 ring-blue-400" : ""}`}
+  >
+    😐
+  </button>
+  <button
+    onClick={() => setMood("Happy")}
+    className={`text-3xl p-2 rounded-full ${mood === "Happy" ? "ring-4 ring-blue-400" : ""}`}
+  >
+    😁
+  </button>
+  <button
+    onClick={() => setMood("Stressed")}
+    className={`text-3xl p-2 rounded-full ${mood === "Stressed" ? "ring-4 ring-blue-400" : ""}`}
+  >
+    😡
+  </button>
+</div>
+
       </div>
 
       {/* Generate schedule button */}
@@ -178,5 +195,3 @@ function App() {
 }
 
 export default App;
-
-

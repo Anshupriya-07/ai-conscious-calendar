@@ -70,9 +70,6 @@ class ScheduleResponse(BaseModel):
     schedule: list[ScheduleItem]
 
 # ---------------------------
-# Energy-aware + unique scheduling with breaks
-# ---------------------------
-# ---------------------------
 # Energy + mood aware scheduling with breaks
 # ---------------------------
 def assign_slots_with_breaks(tasks, energy, mood):
@@ -152,7 +149,6 @@ def assign_slots_with_breaks(tasks, energy, mood):
 
     return schedule
 
-
 # ---------------------------
 # Health check endpoint
 # ---------------------------
@@ -161,72 +157,66 @@ def health_check():
     return {"status": "ok"}
 
 # ---------------------------
-# Schedule generation endpoint
+# Schedule generation endpoint (Batch Classification)
 # ---------------------------
 @app.post("/schedule", response_model=ScheduleResponse)
 def generate_schedule(input: TaskInput):
+    # Build one prompt for all tasks
+    prompt = f"""
+Classify the following tasks strictly as one of [Deep Work, Creative, Shallow].
+For each task, also provide a one-line reason.
+
+Respond ONLY with a JSON array in this format:
+[
+  {{"task": "Finish report", "type": "Deep Work", "reason": "Requires focus"}},
+  {{"task": "Design logo", "type": "Creative", "reason": "Needs creativity"}}
+]
+
+Tasks: {json.dumps(input.tasks)}
+"""
+
     schedule = []
 
-    for i, task_text in enumerate(input.tasks):
-        prompt = f"""
-Classify the following task strictly as one of [Deep Work, Creative, Shallow].
-Also provide a one-line reason. Respond ONLY in JSON format like:
-{{"type": "Deep Work", "reason": "Requires focused, uninterrupted work."}}
-Task: {task_text}
-"""
-        task_type, reason = "Unknown", ""
+    try:
+        response = Groq(api_key).chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
+        )
 
-        try:
-            response = Groq(api_key).chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0
-            )
+        # Extract model response
+        raw_content = (
+            getattr(response.choices[0].message, "content", None)
+            or response.choices[0].message.get("content", "")
+        ).strip()
 
-            # Safely extract model response
-            raw_content = ""
-            try:
-                raw_content = (
-                    getattr(response.choices[0].message, "content", None)
-                    or response.choices[0].message.get("content", "")
-                )
-            except Exception:
-                raw_content = str(response)
+        # Clean JSON if wrapped in code fences
+        if raw_content.startswith("```"):
+            raw_content = raw_content.strip("` \n")
+            if raw_content.startswith("json"):
+                raw_content = raw_content[len("json"):].strip()
 
-            raw_content = raw_content.strip()
+        print("\n==== RAW RESPONSE ====")
+        print(raw_content)
+        print("====================\n")
 
-            # Clean JSON if wrapped in code fences
-            if raw_content.startswith("```"):
-                raw_content = raw_content.strip("` \n")
-                if raw_content.startswith("json"):
-                    raw_content = raw_content[len("json"):].strip()
+        parsed = json.loads(raw_content)
+        if isinstance(parsed, list):
+            schedule = parsed
+        else:
+            print("❌ Unexpected format, falling back.")
+            schedule = [{"task": t, "type": "Unknown", "reason": ""} for t in input.tasks]
 
-            print("\n==== RAW RESPONSE ====")
-            print(raw_content)
-            print("====================\n")
-
-            try:
-                parsed = json.loads(raw_content)
-                task_type = parsed.get("type", "Unknown")
-                reason = parsed.get("reason", "")
-            except json.JSONDecodeError:
-                print("❌ Failed to parse JSON from Groq response.")
-
-        except Exception as e:
-            print("\n" + "="*50)
-            print("Groq error caught!")
-            print(e)
-            traceback.print_exc()
-            print("="*50 + "\n")
-
-        schedule.append({
-            "task": task_text,
-            "type": task_type,
-            "reason": reason
-        })
+    except Exception as e:
+        print("\n" + "="*50)
+        print("Groq error caught!")
+        print(e)
+        traceback.print_exc()
+        print("="*50 + "\n")
+        schedule = [{"task": t, "type": "Unknown", "reason": ""} for t in input.tasks]
 
     final_schedule = assign_slots_with_breaks(schedule, input.energy, input.mood)
     return {"schedule": final_schedule}
@@ -246,3 +236,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
